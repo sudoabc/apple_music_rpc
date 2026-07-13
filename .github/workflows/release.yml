@@ -7,33 +7,51 @@ on:
 
 jobs:
   build:
-    name: Build for ${{ matrix.os }}
+    name: Build ${{ matrix.os }} - ${{ matrix.arch }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
-    
+        include:
+          - os: windows-latest
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            arch: x86_64
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            arch: arm64
+            target: aarch64-apple-darwin
+
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Build
-        run: cargo build --release
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename binary
+      - name: Build and Bundle (macOS)
+        if: contains(matrix.os, 'macos')
+        run: |
+          cargo install cargo-bundle
+          cargo bundle --release --target ${{ matrix.target }}
+
+      - name: Prepare Binaries
         shell: bash
         run: |
+          mkdir -p release_assets
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            mv target/release/apple_music_rpc.exe apple_music_rpc_windows.exe
+            cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows.exe
           else
-            mv target/release/apple_music_rpc apple_music_rpc_macos
+            # Apple Music RPC.app este numele generat de cargo-bundle
+            mv target/${{ matrix.target }}/release/bundle/macos/AppleMusicRPC.app release_assets/AppleMusicRPC_${{ matrix.arch }}.app
           fi
 
       - name: Upload binaries
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            apple_music_rpc_windows.exe
-            apple_music_rpc_macos
+          files: release_assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
