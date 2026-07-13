@@ -20,6 +20,3 @@ jobs:
               
       - name: Check linting with Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-        
-      - name: Check if the code can compile
-        run: cargo check --all-targets --all-features

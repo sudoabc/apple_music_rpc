@@ -45,10 +45,28 @@ jobs:
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
             cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows.exe
           else
-            # Apple Music RPC.app este numele generat de cargo-bundle
-            mv target/${{ matrix.target }}/release/bundle/macos/AppleMusicRPC.app release_assets/AppleMusicRPC_${{ matrix.arch }}.app
-          fi
+            echo "Listing files to debug bundle location:"
+            find target -name "*.app"
+            
+            APP_PATH=$(find target/${{ matrix.target }}/release/bundle/dmg/ -maxdepth 1 -name "*.dmg" | head -n 1)
+            
+            if [ -z "$APP_PATH" ]; then
+              echo "Error: Could not find any .dmg file! Falling back to .app..."
+              APP_PATH=$(find target/${{ matrix.target }}/release/bundle/osx/ -maxdepth 1 -name "*.app" | head -n 1)
+            fi
 
+            if [ -z "$APP_PATH" ]; then
+              echo "Error: Could not find any release bundle!"
+              exit 1
+            fi
+            
+            echo "Found app at: $APP_PATH"
+            if [[ "$APP_PATH" == *.app ]]; then
+              cp -r "$APP_PATH" release_assets/AppleMusicRPC_${{ matrix.arch }}.app
+            else
+              cp "$APP_PATH" release_assets/AppleMusicRPC_${{ matrix.arch }}.dmg
+            fi
+          fi
       - name: Upload binaries
         uses: softprops/action-gh-release@v1
         with:
