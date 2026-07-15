@@ -12,7 +12,7 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 pub async fn run_rpc() {
     let mut discord: rpc::DiscordClient = rpc::DiscordClient::new("1525169580878594229");
     let mut last_song_title: String = String::new();
-    let mut last_was_playing: bool = true;
+    let mut last_was_playing: bool = false;
     let mut last_position: u32 = 0;
 
     // Creating the communication pipe
@@ -35,7 +35,7 @@ pub async fn run_rpc() {
                 let status_changed = song_info.is_playing != last_was_playing;
                 let seeked_or_repeated = song_info.is_playing 
                     && last_was_playing 
-                    && song_info.position_ms < (last_position.saturating_sub(3000));
+                    && song_info.position_ms.abs_diff(last_position) > 3000;
 
                 if song_changed || status_changed || seeked_or_repeated {
                     song_info.fetch_api_data().await;
