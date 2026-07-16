@@ -39,6 +39,7 @@ pub struct SongInfo {
     pub is_playing: bool,
     pub position_ms: u32,
     
+    pub song_id: Option<String>,
     pub cover_url: Option<String>, 
     pub song_url: Option<String>,
 }
@@ -49,7 +50,8 @@ impl SongInfo {
         artist: &str, 
         length_ms: u32, 
         is_playing: bool, 
-        position_ms: u32
+        position_ms: u32,
+        song_id: Option<String>
     ) -> Self {
         // Remove unwanted characters from the artist name (e.g., Apple-specific dashes)
         let clean_artist = ARTIST_CLEAN_RE
@@ -63,9 +65,38 @@ impl SongInfo {
             length_ms,
             is_playing,
             position_ms,
+            song_id,
             cover_url: None, 
             song_url: None,
         }
+    }
+
+    async fn do_request(&self, url: String) -> Option<Vec<AppleTrack>> {
+        if let Ok(response) = reqwest::get(&url).await 
+            && let Ok(json) = response.json::<AppleApiResponse>().await
+        {
+            Some(json.results)
+        } else {
+            None
+        }
+    }
+
+    fn set_artwork(&mut self, track: &AppleTrack) {
+        if let Some(art_work) = &track.artwork_url100 {
+            self.cover_url = Some(art_work.replace("100x100bb", "512x512bb"));
+        }
+        self.song_url = track.track_view_url.clone();
+    }
+
+    fn set_cache(&self, query: String, track: AppleTrack) {
+        let mut cache_lock = SONG_CACHE.lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        if cache_lock.len() >= MAX_CACHE_ENTRIES {
+            cache_lock.clear();
+        }
+
+        cache_lock.insert(query, track);
     }
 
     pub async fn fetch_api_data(&mut self) {
@@ -77,29 +108,37 @@ impl SongInfo {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner());
             if let Some(cached_track) = cache_lock.get(&query) {
-                if let Some(art_work) = &cached_track.artwork_url100 {
-                    self.cover_url = Some(art_work.replace("100x100bb", "512x512bb"));
-                }
-
-                self.song_url = cached_track.track_view_url.clone();
+                self.set_artwork(cached_track);
                 return;
             }
         }
 
-        let title_lower = self.title.to_lowercase().trim().to_string();
-        let artist_lower = self.artist.to_lowercase().trim().to_string();
-        let mut found_track ;
+        if let Some(song_id) = self.song_id.clone() {
+            // Fetching artwork and song url precisely using the song_id (MacOS case)
+            let url = format!(
+                "https://itunes.apple.com/lookup?id={}",
+                song_id
+            );
+            let results = self.do_request(url).await;
 
-        let url = format!(
-            "https://itunes.apple.com/search?term={}&entity=song&limit=5", 
-            urlencoding::encode(&query)
-        );
+            if let Some(track) = results
+                .and_then(|tracks| tracks.into_iter().next()) 
+            {
+                self.set_artwork(&track);
+                self.set_cache(song_id.clone(), track); 
+            }
+        } else {
+            // No Song ID available. Fetching using song name and artist
+            let title_lower = self.title.to_lowercase().trim().to_string();
+            let artist_lower = self.artist.to_lowercase().trim().to_string();
 
-        if let Ok(response) = reqwest::get(&url).await 
-            && let Ok(json) = response.json::<AppleApiResponse>().await
-        {
+            let url = format!(
+                "https://itunes.apple.com/search?term={}&entity=song&limit=5", 
+                urlencoding::encode(&query)
+            );
+            let results = self.do_request(url).await;
 
-            found_track = json.results.into_iter().find(|res| {
+            let mut found_track = results.unwrap_or_default().into_iter().find(|res| {
                 let api_title = res.track_name.to_lowercase();
                 (api_title == title_lower || api_title.contains(&title_lower) || title_lower.contains(&api_title))
                 && res.artist_name.to_lowercase().contains(&artist_lower)
@@ -110,34 +149,17 @@ impl SongInfo {
                     "https://itunes.apple.com/search?term={}&entity=song&limit=200", 
                     urlencoding::encode(&self.artist)
                 );
+                let results_brute = self.do_request(url_brute).await;
 
-                if let Ok(response) = reqwest::get(&url_brute).await 
-                    && let Ok(json) = response.json::<AppleApiResponse>().await
-                {
-                    found_track = json.results.into_iter().find(|res| {
-                        let api_title = res.track_name.to_lowercase();
-                        (api_title.contains(&title_lower) || title_lower.contains(&api_title))
-                        && res.artist_name.to_lowercase().contains(&artist_lower)
-                    });
-                }
-            }
-
+                found_track = results_brute.unwrap_or_default().into_iter().find(|res| {
+                    let api_title = res.track_name.to_lowercase();
+                    (api_title.contains(&title_lower) || title_lower.contains(&api_title))
+                    && res.artist_name.to_lowercase().contains(&artist_lower)
+                });
+            }   
             if let Some(track) = found_track {
-                if let Some(art_work) = &track.artwork_url100 {
-                    self.cover_url = Some(art_work.replace("100x100bb", "512x512bb"));
-                }
-                self.song_url = track.track_view_url.clone();
-
-                {
-                    let mut cache_lock = SONG_CACHE.lock()
-                        .unwrap_or_else(|e| e.into_inner());
-
-                    if cache_lock.len() >= MAX_CACHE_ENTRIES {
-                        cache_lock.clear();
-                    }
-
-                    cache_lock.insert(query, track.clone());
-                }
+                self.set_artwork(&track);
+                self.set_cache(query, track);
             }
         }
     }
@@ -273,7 +295,14 @@ pub async fn start_listener(tx: tokio::sync::mpsc::Sender<Option<SongInfo>>) {
                 set track_artist to artist of current track
                 set track_duration to duration of current track
                 set track_pos to player position
-                return track_state & "|" & track_name & "|" & track_artist & "|" & track_duration & "|" & track_pos
+                
+                try
+                    set song_id to store id of current track as string
+                on error
+                    set song_id to "None"
+                end try
+
+                return track_state & "|" & track_name & "|" & track_artist & "|" & track_duration & "|" & track_pos & "|" & song_id
             end if
         end tell
     "#;
@@ -293,10 +322,15 @@ pub async fn start_listener(tx: tokio::sync::mpsc::Sender<Option<SongInfo>>) {
             let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !result.is_empty() {
                 let parts: Vec<&str> = result.split('|').collect();
-                if parts.len() == 5 {
+                if parts.len() == 6 {
                     let is_playing = parts[0] == "playing";
                     let duration_sec: f64 = parts[3].replace(",", ".").parse().unwrap_or(0.0);
                     let position_sec: f64 = parts[4].replace(",", ".").parse().unwrap_or(0.0);
+                    let song_id: Option<String> = if parts[5] == "None" {
+                        None
+                    } else {
+                        Some(parts[5].to_string())
+                    };
 
                     let song = SongInfo::new(
                         parts[1], 
@@ -304,6 +338,7 @@ pub async fn start_listener(tx: tokio::sync::mpsc::Sender<Option<SongInfo>>) {
                         (duration_sec * 1000.0) as u32,
                         is_playing,
                         (position_sec * 1000.0) as u32,
+                        song_id
                     );
 
                     let _ = tx.send(Some(song)).await.ok();
@@ -429,7 +464,8 @@ pub async fn start_listener(tx: tokio::sync::mpsc::Sender<Option<SongInfo>>) {
                     &artist, 
                     length_ms, 
                     is_playing, 
-                    position_ms
+                    position_ms,
+                    None // Can't fetch apple music song id on windows or i didn't figure it out at least
                 ))
             }
             .await;

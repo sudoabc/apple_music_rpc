@@ -15,6 +15,9 @@ jobs:
           - os: windows-latest
             arch: x86_64
             target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            arch: arm64
+            target: aarch64-pc-windows-msvc
           - os: macos-latest
             arch: x86_64
             target: x86_64-apple-darwin
@@ -43,7 +46,7 @@ jobs:
         run: |
           mkdir -p release_assets
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows.exe
+            cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows_${{ matrix.arch }}.exe
           else
             echo "Listing files to debug bundle location:"
             find target -name "*.app"

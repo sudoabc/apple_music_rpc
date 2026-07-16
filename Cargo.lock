@@ -43,7 +43,7 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "apple_music_rpc"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "discord-rich-presence",
  "image 0.25.10",

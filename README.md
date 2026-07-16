@@ -8,7 +8,8 @@ A lightweight, cross-platform desktop application written in Rust that displays 
 
 | Platform | Architecture | Download Link |
 | :--- | :--- | :--- |
-| **Windows** | x64 | [Download .exe](https://github.com/sudoabc/apple_music_rpc/releases/latest/download/apple_music_rpc_windows.exe) |
+| **Windows** | x64 | [Download .exe (x64)](https://github.com/sudoabc/apple_music_rpc/releases/latest/download/apple_music_rpc_windows_x86_64.exe) |
+| **Windows** | ARM64 | [Download .exe (ARM64)](https://github.com/sudoabc/apple_music_rpc/releases/latest/download/apple_music_rpc_windows_arm64.exe)
 | **macOS** | Intel (x86_64) | [Download .d,g (Intel)](https://github.com/sudoabc/apple_music_rpc/releases/latest/download/AppleMusicRPC_x86_64.dmg) |
 | **macOS** | Apple Silicon (ARM64) | [Download .dmg (ARM64)](https://github.com/sudoabc/apple_music_rpc/releases/latest/download/AppleMusicRPC_arm64.dmg) |
 
