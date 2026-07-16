@@ -15,6 +15,9 @@ jobs:
           - os: windows-latest
             arch: x86_64
             target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            arch: arm64
+            target: aarch64-pc-windows-msvc
           - os: macos-latest
             arch: x86_64
             target: x86_64-apple-darwin
@@ -43,17 +46,12 @@ jobs:
         run: |
           mkdir -p release_assets
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows.exe
+            cp target/${{ matrix.target }}/release/apple_music_rpc.exe release_assets/apple_music_rpc_windows_${{ matrix.arch }}.exe
           else
             echo "Listing files to debug bundle location:"
             find target -name "*.app"
             
             APP_PATH=$(find target/${{ matrix.target }}/release/bundle/dmg/ -maxdepth 1 -name "*.dmg" | head -n 1)
-            
-            if [ -z "$APP_PATH" ]; then
-              echo "Error: Could not find any .dmg file! Falling back to .app..."
-              APP_PATH=$(find target/${{ matrix.target }}/release/bundle/osx/ -maxdepth 1 -name "*.app" | head -n 1)
-            fi
 
             if [ -z "$APP_PATH" ]; then
               echo "Error: Could not find any release bundle!"
@@ -61,11 +59,7 @@ jobs:
             fi
             
             echo "Found app at: $APP_PATH"
-            if [[ "$APP_PATH" == *.app ]]; then
-              cp -r "$APP_PATH" release_assets/AppleMusicRPC_${{ matrix.arch }}.app
-            else
-              cp "$APP_PATH" release_assets/AppleMusicRPC_${{ matrix.arch }}.dmg
-            fi
+            cp "$APP_PATH" release_assets/AppleMusicRPC_${{ matrix.arch }}.dmg
           fi
       - name: Upload binaries
         uses: softprops/action-gh-release@v1
